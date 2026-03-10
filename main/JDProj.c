@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,7 +16,7 @@ static const char* TAG = "JDProj";
 #define I2C_MASTER_RX_BUF 0
 #define I2C_MASTER_TIMEOUT_MS 1000
 
-#define VL530X_ADDR 0x52 
+#define VL53L0X_ADDR 0x52 
 
 static void i2c_master_init(i2c_master_bus_handle_t* bus_handle, i2c_master_dev_handle_t* dev_handle) {
   i2c_master_bus_config_t bus_config = {
@@ -31,7 +32,7 @@ static void i2c_master_init(i2c_master_bus_handle_t* bus_handle, i2c_master_dev_
 
   i2c_device_config_t dev_config = {
     .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-    .device_address = VL530X_ADDR,
+    .device_address = VL530LX_ADDR,
     .scl_speed_hz = I2C_MASTER_FREQ,
   };
 
@@ -40,8 +41,23 @@ static void i2c_master_init(i2c_master_bus_handle_t* bus_handle, i2c_master_dev_
 
 void app_main(void)
 {
+  //setup I2C bus
   i2c_master_bus_handle_t bus_handle;
   i2c_master_dev_handle_t dev_handle;
   i2c_master_init(&bus_handle, &dev_handle);
-  ESP_LOGI(TAG, "I2C initialized successfully");
+  ESP_LOGI(TAG, "I2C bus initialized successfully");
+  
+  //setup sensor software layer using api 
+  
+  //lcd initialization
+
+  //setup sensor range iniialization
+
+  //main loop
+  
+  while (true) {
+    //poll sensor
+    //update lcd
+    //hosuekeeping
+  }
 }
