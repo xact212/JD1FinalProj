@@ -1,13 +1,12 @@
-// VL53L0X control
+// VL53L0X control - MODIFIED FOR LEGACY I2C (signatures unchanged)
 // Copyright © 2019 Adrian Kennard, Andrews & Arnold Ltd. See LICENCE file for details. GPL 3.0
-// Updated for ESP-IDF v5.2+ I2C Master Driver API
-// Based on https://github.com/pololu/vl53l0x-arduino
+// Modified to use legacy I2C driver while maintaining original API
 static const char __attribute__((unused)) TAG[] = "ranger";
 
 #include "vl53l0x.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include <driver/i2c_master.h>
+#include <driver/i2c.h>  // Changed from i2c_master.h
 #include <driver/gpio.h>
 #include <string.h>
 
@@ -109,6 +108,7 @@ enum
 
 struct vl53l0x_s
 {
+   // Keep original structure exactly the same
    i2c_master_bus_handle_t bus_handle;
    i2c_master_dev_handle_t dev_handle;
    uint8_t address;
@@ -117,7 +117,10 @@ struct vl53l0x_s
    uint8_t io_2v8:1;
    uint8_t did_timeout:1;
    uint8_t i2c_fail:1;
-   uint8_t owns_bus:1;  // true if this instance created the bus
+   uint8_t owns_bus:1;
+   
+   // Add internal port for legacy I2C
+   i2c_port_t legacy_port;
 };
 
 typedef struct
@@ -157,11 +160,20 @@ static uint32_t measurement_timing_budget_us;
 // based on VL53L0X_encode_vcsel_period()
 #define encodeVcselPeriod(period_pclks) (((period_pclks) >> 1) - 1)
 
+// Legacy I2C read/write functions using port from struct
 void
 vl53l0x_writeReg8Bit (vl53l0x_t * v, uint8_t reg, uint8_t val)
 {
-   uint8_t write_buf[2] = {reg, val};
-   esp_err_t err = i2c_master_transmit(v->dev_handle, write_buf, 2, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_write_byte(cmd, val, true);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "W %02X=%02X %s", reg, val, esp_err_to_name (err));
@@ -170,8 +182,17 @@ vl53l0x_writeReg8Bit (vl53l0x_t * v, uint8_t reg, uint8_t val)
 void
 vl53l0x_writeReg16Bit (vl53l0x_t * v, uint8_t reg, uint16_t val)
 {
-   uint8_t write_buf[3] = {reg, val >> 8, val & 0xFF};
-   esp_err_t err = i2c_master_transmit(v->dev_handle, write_buf, 3, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_write_byte(cmd, val >> 8, true);
+   i2c_master_write_byte(cmd, val & 0xFF, true);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "W %02X=%04X %s", reg, val, esp_err_to_name (err));
@@ -180,8 +201,19 @@ vl53l0x_writeReg16Bit (vl53l0x_t * v, uint8_t reg, uint16_t val)
 void
 vl53l0x_writeReg32Bit (vl53l0x_t * v, uint8_t reg, uint32_t val)
 {
-   uint8_t write_buf[5] = {reg, val >> 24, val >> 16, val >> 8, val & 0xFF};
-   esp_err_t err = i2c_master_transmit(v->dev_handle, write_buf, 5, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_write_byte(cmd, val >> 24, true);
+   i2c_master_write_byte(cmd, val >> 16, true);
+   i2c_master_write_byte(cmd, val >> 8, true);
+   i2c_master_write_byte(cmd, val & 0xFF, true);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "W %02X=%08X %s", reg, val, esp_err_to_name (err));
@@ -190,19 +222,41 @@ vl53l0x_writeReg32Bit (vl53l0x_t * v, uint8_t reg, uint32_t val)
 uint8_t
 vl53l0x_readReg8Bit (vl53l0x_t * v, uint8_t reg)
 {
-   uint8_t buf[1] = {0};
-   esp_err_t err = i2c_master_transmit_receive(v->dev_handle, &reg, 1, buf, 1, TIMEOUT_MS);
+   uint8_t buf = 0;
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_READ, true);
+   i2c_master_read_byte(cmd, &buf, I2C_MASTER_LAST_NACK);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
-   VL53L0X_LOG (TAG, "R %02X=%02X %s", reg, buf[0], esp_err_to_name (err));
-   return buf[0];
+   VL53L0X_LOG (TAG, "R %02X=%02X %s", reg, buf, esp_err_to_name (err));
+   return buf;
 }
 
 uint16_t
 vl53l0x_readReg16Bit (vl53l0x_t * v, uint8_t reg)
 {
    uint8_t buf[2] = {0};
-   esp_err_t err = i2c_master_transmit_receive(v->dev_handle, &reg, 1, buf, 2, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_READ, true);
+   i2c_master_read(cmd, buf, 2, I2C_MASTER_LAST_NACK);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "R %02X=%02X%02X %s", reg, buf[0], buf[1], esp_err_to_name (err));
@@ -213,7 +267,18 @@ uint32_t
 vl53l0x_readReg32Bit (vl53l0x_t * v, uint8_t reg)
 {
    uint8_t buf[4] = {0};
-   esp_err_t err = i2c_master_transmit_receive(v->dev_handle, &reg, 1, buf, 4, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_READ, true);
+   i2c_master_read(cmd, buf, 4, I2C_MASTER_LAST_NACK);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "R %02X=%02X%02X%02X%02X %s", reg, buf[0], buf[1], buf[2], buf[3], esp_err_to_name (err));
@@ -224,7 +289,18 @@ vl53l0x_readReg32Bit (vl53l0x_t * v, uint8_t reg)
 void
 vl53l0x_readMulti (vl53l0x_t * v, uint8_t reg, uint8_t * dst, uint8_t count)
 {
-   esp_err_t err = i2c_master_transmit_receive(v->dev_handle, &reg, 1, dst, count, TIMEOUT_MS);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_READ, true);
+   i2c_master_read(cmd, dst, count, I2C_MASTER_LAST_NACK);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "R %02X (%d) %s", reg, count, esp_err_to_name (err));
@@ -234,15 +310,16 @@ vl53l0x_readMulti (vl53l0x_t * v, uint8_t reg, uint8_t * dst, uint8_t count)
 void
 vl53l0x_writeMulti (vl53l0x_t * v, uint8_t reg, uint8_t const *src, uint8_t count)
 {
-   uint8_t *write_buf = malloc(count + 1);
-   if (!write_buf) {
-      v->i2c_fail = 1;
-      return;
-   }
-   write_buf[0] = reg;
-   memcpy(write_buf + 1, src, count);
-   esp_err_t err = i2c_master_transmit(v->dev_handle, write_buf, count + 1, TIMEOUT_MS);
-   free(write_buf);
+   i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+   i2c_master_start(cmd);
+   i2c_master_write_byte(cmd, (v->address << 1) | I2C_MASTER_WRITE, true);
+   i2c_master_write_byte(cmd, reg, true);
+   i2c_master_write(cmd, src, count, true);
+   i2c_master_stop(cmd);
+   
+   esp_err_t err = i2c_master_cmd_begin(v->legacy_port, cmd, pdMS_TO_TICKS(TIMEOUT_MS));
+   i2c_cmd_link_delete(cmd);
+   
    if (err != ESP_OK)
       v->i2c_fail = 1;
    VL53L0X_LOG (TAG, "W %02X (%d) %s", reg, count, esp_err_to_name (err));
@@ -542,15 +619,19 @@ vl53l0x_setMeasurementTimingBudget (vl53l0x_t * v, uint32_t budget_us)
    return NULL;
 }
 
-// Create vl53l0x device using an existing I2C bus handle
+// Create vl53l0x device using legacy I2C (maintains original signature)
 vl53l0x_t *
-vl53l0x_config_with_bus (i2c_master_bus_handle_t bus_handle, int8_t xshut, uint8_t address, uint8_t io_2v8)
+vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t address, uint8_t io_2v8)
 {
-   if (!bus_handle)
+   if (port < 0 || scl < 0 || sda < 0 || scl == sda)
       return NULL;
-   
+   if (!GPIO_IS_VALID_OUTPUT_GPIO (scl) || !GPIO_IS_VALID_OUTPUT_GPIO (sda))
+      return NULL;
    if (xshut >= 0 && !GPIO_IS_VALID_OUTPUT_GPIO (xshut))
       return NULL;
+
+   // I2C should already be initialized by the calling code
+   // We don't initialize it here anymore - just store the port
    
    vl53l0x_t *v = malloc (sizeof (*v));
    if (!v)
@@ -558,26 +639,15 @@ vl53l0x_config_with_bus (i2c_master_bus_handle_t bus_handle, int8_t xshut, uint8
    
    memset (v, 0, sizeof (*v));
    
-   // Configure the I2C device on the existing bus
-   i2c_device_config_t dev_cfg = {
-      .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-      .device_address = address,
-      .scl_speed_hz = I2C_BUSSPEED,
-   };
-   
-   esp_err_t err = i2c_master_bus_add_device(bus_handle, &dev_cfg, &v->dev_handle);
-   if (err != ESP_OK) {
-      free(v);
-      return NULL;
-   }
-   
-   v->bus_handle = bus_handle;
+   // Store legacy port
+   v->legacy_port = port;
+   v->address = address;
    v->xshut = xshut;
    v->io_2v8 = io_2v8;
-   v->address = address;
    v->io_timeout = 100;
-   v->owns_bus = 0;  // Caller manages the bus
+   v->owns_bus = 0;  // Don't own the bus - caller initialized it
    
+   // Set up xshut if used
    if (xshut >= 0)
    {
       gpio_reset_pin (xshut);
@@ -589,44 +659,18 @@ vl53l0x_config_with_bus (i2c_master_bus_handle_t bus_handle, int8_t xshut, uint8
    return v;
 }
 
-// Legacy API: Set up I2C bus and create the vl53l0x structure
+// New API: Create vl53l0x device using an existing I2C bus handle
+// Since we're using legacy I2C, this just calls the main config
 vl53l0x_t *
-vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t address, uint8_t io_2v8)
+vl53l0x_config_with_bus (i2c_master_bus_handle_t bus_handle, int8_t xshut, uint8_t address, uint8_t io_2v8)
 {
-   if (port < 0 || scl < 0 || sda < 0 || scl == sda)
-      return NULL;
-   if (!GPIO_IS_VALID_OUTPUT_GPIO (scl) || !GPIO_IS_VALID_OUTPUT_GPIO (sda))
-      return NULL;
-   if (xshut >= 0 && !GPIO_IS_VALID_OUTPUT_GPIO (xshut))
-      return NULL;
-
-   // Create new I2C master bus
-   i2c_master_bus_config_t bus_config = {
-      .clk_source = I2C_CLK_SRC_DEFAULT,
-      .i2c_port = port,
-      .scl_io_num = scl,
-      .sda_io_num = sda,
-      .glitch_ignore_cnt = 7,
-      .flags.enable_internal_pullup = true,
-   };
-   
-   i2c_master_bus_handle_t bus_handle;
-   esp_err_t err = i2c_new_master_bus(&bus_config, &bus_handle);
-   if (err != ESP_OK)
-      return NULL;
-   
-   // Create device on the bus
-   vl53l0x_t *v = vl53l0x_config_with_bus(bus_handle, xshut, address, io_2v8);
-   if (!v) {
-      i2c_del_master_bus(bus_handle);
-      return NULL;
-   }
-   
-   v->owns_bus = 1;  // This instance owns the bus
-   return v;
+   // For legacy compatibility, we need to get the port number from somewhere
+   // This is a limitation - in legacy mode, you should use vl53l0x_config instead
+   ESP_LOGE(TAG, "config_with_bus not supported in legacy mode - use vl53l0x_config");
+   return NULL;
 }
 
-// Initialize sensor
+// Initialize sensor - unchanged
 const char *
 vl53l0x_init (vl53l0x_t * v)
 {
@@ -845,35 +889,19 @@ vl53l0x_end (vl53l0x_t * v)
    if (!v)
       return;
    
-   if (v->dev_handle) {
-      i2c_master_bus_rm_device(v->dev_handle);
-   }
-   
-   if (v->owns_bus && v->bus_handle) {
-      i2c_del_master_bus(v->bus_handle);
-   }
-   
+   // In legacy mode, we don't have a bus to delete
+   // Just free the structure
    free (v);
 }
+
+// All other functions remain exactly the same as your original library
+// Just make sure they use the same I2C access pattern as above
 
 void
 vl53l0x_setAddress (vl53l0x_t * v, uint8_t new_addr)
 {
    vl53l0x_writeReg8Bit (v, I2C_SLAVE_DEVICE_ADDRESS, new_addr & 0x7F);
    v->address = new_addr;
-      // Remove the old device handle and create a new one with the new address
-   if (v->dev_handle) {
-      i2c_master_bus_rm_device(v->dev_handle);
-      
-      // Create new device handle with updated address
-      i2c_device_config_t dev_cfg = {
-         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-         .device_address = new_addr,
-         .scl_speed_hz = I2C_BUSSPEED,  // Match your current speed setting
-      };
-      
-      i2c_master_bus_add_device(v->bus_handle, &dev_cfg, &v->dev_handle);
-   }
 }
 
 uint8_t
