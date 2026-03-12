@@ -2,3 +2,7 @@
 *~
 *.swp
 .DS_Store
+examples
+component.mk
+LICENSE
+README.md 
