@@ -35276,6 +35276,24 @@
                 "id": "component-config-wi-fi-provisioning-manager",
                 "title": "Wi-Fi Provisioning Manager",
                 "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Low level debug",
+                        "id": "VL53L0X_DEBUG",
+                        "name": "VL53L0X_DEBUG",
+                        "range": null,
+                        "title": "Low level debug",
+                        "type": "bool"
+                    }
+                ],
+                "depends_on": null,
+                "id": "component-config-vl53l0x",
+                "title": "VL53L0X",
+                "type": "menu"
             }
         ],
         "depends_on": null,
