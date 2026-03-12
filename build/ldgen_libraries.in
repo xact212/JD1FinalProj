@@ -160,5 +160,9 @@ $<TARGET_FILE:idf::spiffs>
 $<TARGET_FILE:idf::wifi_provisioning>
 $<TARGET_FILE:__idf_json>
 $<TARGET_FILE:idf::VL53L0X_API>
+$<TARGET_FILE:idf::esp32-smbus>
+$<TARGET_FILE:idf::esp32-i2c-lcd1602>
+$<TARGET_FILE:__idf_esp32-smbus>
 $<TARGET_FILE:idf::main>
 $<TARGET_FILE:__idf_VL53L0X_API>
+$<TARGET_FILE:__idf_esp32-i2c-lcd1602>

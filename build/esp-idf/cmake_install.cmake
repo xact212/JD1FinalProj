@@ -569,6 +569,16 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/Users/light/OneDrive/Documents/ESP/ECE341/JDProj/build/esp-idf/esp32-smbus/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/light/OneDrive/Documents/ESP/ECE341/JDProj/build/esp-idf/esp32-i2c-lcd1602/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/Users/light/OneDrive/Documents/ESP/ECE341/JDProj/build/esp-idf/main/cmake_install.cmake")
 endif()
 

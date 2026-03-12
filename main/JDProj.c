@@ -8,6 +8,7 @@
 #include "driver/i2c_master.h"
 
 #include "vl53l0x.h"
+#include "i2c-lcd1602.h"
 static const char* TAG = "JDProj";
 
 #define I2C_MASTER_SCL 22 

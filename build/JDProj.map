@@ -10034,6 +10034,8 @@ LOAD esp-idf/rt/librt.a
 LOAD esp-idf/spiffs/libspiffs.a
 LOAD esp-idf/wifi_provisioning/libwifi_provisioning.a
 LOAD esp-idf/VL53L0X_API/libVL53L0X_API.a
+LOAD esp-idf/esp32-smbus/libesp32-smbus.a
+LOAD esp-idf/esp32-i2c-lcd1602/libesp32-i2c-lcd1602.a
 LOAD esp-idf/main/libmain.a
 LOAD esp-idf/app_trace/libapp_trace.a
 LOAD esp-idf/unity/libunity.a
@@ -10044,6 +10046,8 @@ LOAD esp-idf/console/libconsole.a
 LOAD esp-idf/protobuf-c/libprotobuf-c.a
 LOAD esp-idf/json/libjson.a
 LOAD esp-idf/VL53L0X_API/libVL53L0X_API.a
+LOAD esp-idf/esp32-i2c-lcd1602/libesp32-i2c-lcd1602.a
+LOAD esp-idf/esp32-smbus/libesp32-smbus.a
 LOAD esp-idf/xtensa/libxtensa.a
 LOAD esp-idf/esp_driver_gpio/libesp_driver_gpio.a
 LOAD esp-idf/esp_pm/libesp_pm.a
